@@ -103,7 +103,7 @@ kubectl apply -f https://github.com/kubevirt/kubevirt/releases/download/${KUBEVI
 # Create the KubeVirt CR (instance deployment request) which triggers the actual installation
 kubectl apply -f https://github.com/kubevirt/kubevirt/releases/download/${KUBEVIRT_VERSION}/kubevirt-cr.yaml
 # wait until all KubeVirt components are up
-kubectl -n kubevirt wait kv kubevirt --for condition=Available
+kubectl -n kubevirt wait --timeout=5m kv kubevirt --for condition=Available
 ```
 
 ### Install Operators
