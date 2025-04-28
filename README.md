@@ -107,27 +107,9 @@ kubectl -n kubevirt wait --timeout=5m kv kubevirt --for condition=Available
 ```
 
 ### Install Operators
-From the Crownlabs directory, move in the `operators` folder 
+From the Crownlabs directory, move in the `operators` folder, and use the following commands to deploy all the resoruces and start the controllers:
 ```bash
 cd operators
-```
-You can use the following command to deploy all the resoruces and start the controllers:
-```bash 
-make run-instance-local
-```
-In alternative, you can install all the resource and start the controller manually
-
-Install all the CRDs:
-```bash 
 make install-local
-```
-
-Install some example CRs
-```bash 
-make samples-local
-```
-
-Run controllers
-```bash 
-make run-instance
+make run-instance-local
 ```
