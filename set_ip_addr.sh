@@ -21,7 +21,7 @@ if [ -z "$CRI" ]; then
   echo "Using default container runtime: $CRI"
 fi
 
-SUBNET=$($CRI network inspect $CLUSTER -f '{{(index .IPAM.Config 1).Subnet}}')
+SUBNET=$($CRI network inspect $CLUSTER -f '{{(index .IPAM.Config 0).Subnet}}')
 if [ $? -ne 0 ]; then
   echo "Error: Failed to get subnet from $CRI network inspect."
   exit 1
