@@ -1,4 +1,4 @@
-# Instance Automation Controller
+### Instance Automation Controller
 
 The **Instance Automation Controller** (`instautoctrl` package) is part of the automation framework developed for the *Cloud Programming* course, Politecnico di Torino, 2025 edition.  
 It implements backend logic to manage the lifecycle of instances declared as **Inactive**.
@@ -10,48 +10,34 @@ The package includes four controllers:
 - [Instance Submission](#instance-submission-controller)
 - [Instance Expiration](#instance-expiration-controller)
 
----
-
-## Instance Inactive Termination Controller
-
-This controller monitors instances and automates actions based on their inactivity status and lifespan. The controller understands if the Instance can be declared as Inactive and starts sending notifications to its tenant to inform them to access their Instance resources, otherwise they will be paused (if persistent) or deleted (if not persistent) after a specific period of time.
-- **Field used**: `Template.spec.InactivityTimeout`  
-- **Default value**: `never`
-
-### Detailed Behavior
-1. The controller retrieve all the active instances.
-2. It checks if the Instance has to be monitored or not.
-    * On the associated `Namespace` resource a new label called `InstanceInactivityIgnoreNamespace` can be added.
-    * If the `Namespace` presents this label, the `Instance` is ignored by the controller, therefore it can stay inactive for a long time and not being stopped/deleted.
-3. The controller adds new annotations on the `Instance`:
-    * **AlertAnnotationNum**: the number of notifications that has been sent to inform the tenant that the instance has not been used for a certain time and it will be stopped/deleted soon. It ranges from 0 up to `InstanceMaxNumberOfAlerts`.
-    * **LastActivityAnnotation**: it represents the last moment the user has accessed to the `Instance` via Frontend (using the Ingress) or via SSH.
-    * **LastNotificationTimestampAnnotation**: the timestamp of the last sent notification. It is used to understand if enough time is passed from the previous notification, hence a new one can be sent.
-4. The controller checks if the instance is inactive by comparing its last activity timestamp against the `InactivityTimeout` specified in the `Template`.
-    - If the instance is inactive (remainingTime <0=):
-        - A series of notification emails are sent to the `Instance` owner.
-        - After a configurable number of alerts, **CrownLabs** proceeds to either:
-            - Stop the `Instance` (if it is persistent), or
-            - Delete the `Instance` (if it is non-persistent).
-    - If the `Instance` is not inactive (remainingTime >0), the check is rescheduled for a future run.
-5. If the `Instance` has been paused and the user restart it, the `AlertAnnotationNum` is reset, the controller evaluate the new `remainingTime` and the entire process repeat itself.
-    - This mechanism uses the `LastRunningAnnotation` value to understand if the `Instance` has been restarted after being paused.
 
 
-### How does the check is performed?
-The controller focuses on one point: understand if the `Instance` is being used (and it should not be deleted) or it is not used (and it should be deleted).
-An `Instance` can be accessed by the Crownlabs Frontend or via SSH.
+#### Instance Inactive Termination Controller
+
+This controller monitors instances and automates actions based on their inactivity status and lifespan. The controller understands if the Instance can be declared as Inactive and starts sending notifications to its tenant to inform them to access their Instance resources, otherwise they will be paused (if persistent) or deleted (if not persistent) after a specific period of time defined in the `Template` resource.
+
+##### Detailed Behavior
+The controller begins by retrieving all the active **Instances**. For each instance, it determines whether it should be monitored or not. This decision is influenced by a special label that can be added to the associated **Namespace** resource, called `InstanceInactivityIgnoreNamespace`. If the Namespace carries this label, the controller will ignore the instance, allowing it to remain inactive for an extended period without being stopped or deleted.
+
+Once it is established that the instance should be monitored, the controller adds several annotations to it. These include the `AlertAnnotationNum`, which tracks the number of notifications sent to inform the tenant that the instance has been idle for some time and will soon be stopped or deleted. This number ranges from zero up to a maximum limit defined by `InstanceMaxNumberOfAlerts`. Another annotation is the `LastActivityAnnotation`, which records the last time the user accessed the instance either via the frontend through the Ingress or via SSH (through the SSH bastion tracker). The controller also adds the `LastNotificationTimestampAnnotation`, indicating the timestamp when the last notification was sent. This timestamp helps to determine if enough time has passed since the previous notification, allowing a new alert to be sent if needed.
+
+Next, the controller checks whether the instance is inactive by comparing its last activity timestamp with the **InactivityTimeout** value specified in the Template. If the instance is found to be inactive (meaning the remaining time is zero or less), a series of notification emails are sent to the instance owner. Once the number of alerts reaches a configurable threshold, CrownLabs will take action by either stopping the instance if it is persistent, or deleting it if it is non-persistent. On the other hand, if the instance is still active (the remaining time is greater than zero), the controller reschedules the inactivity check for a future time.
+
+Finally, if the instance has been paused and the user restarts it, the `AlertAnnotationNum` is reset. The controller then evaluates the new remaining time, and the entire monitoring process begins again. This mechanism relies on the `LastRunningAnnotation` annotation to detect if the instance has been restarted after being paused.
+
+
+##### How does the check is performed?
+The controller focuses on one point: understanding if the **Instance** is being used (and it should not be deleted) or it is not being used (and it should be deleted).
+An Instance can be accessed by the Crownlabs Frontend or via SSH.
 The controller uses **Prometheus** to do this check:
-* It uses Nginx Metrics to verify the last access to the Frontend
+* It uses Nginx metrics to verify the last access to the Frontend
 * It uses a custom metric (called **bastion_ssh_connections**) to monitor the SSH accesses.
 
-After this check, the **LastActivityAnnotation** is updated with the most recent timestamp. If the last access is above the max threshold (defined with the `inactivityTimeout` field in the `Template` resource), the `Instance` is declared as **inactive** and (if enabled) email notifications start to be sent at regular interval (**NotificationInterval** parameter).
-After the maximum time of notifications, the `Instance` is stopped.
+After this check, the **LastActivityAnnotation** is updated with the most recent timestamp. If the last access is above the max threshold (defined with the `inactivityTimeout` field in the **Template** resource), the Instance is declared as **inactive** and (if enabled) email notifications start to be sent at regular interval (**NotificationInterval** parameter).
+After the maximum time of notifications, the Instance is stopped.
 
-### How does the SSH access is monitored?
-Already done in the other PR ??
 
-### Parameters for the reconciler
+##### Parameters for the reconciler
 The **InstanceInactiveTerminationReconciler** adds some new parameters compared to the other controllers:
 * **InstanceMaxNumberOfAlerts**: the maximum number of notification that Crownlabs can send before stopping/deleting the Instance. It can be overrided by the `AlertAnnotationNum` annotation that can be in the Template resource.
 * **EnableInactivityNotifications**: flag to enable/disable the email notifications.
@@ -64,77 +50,63 @@ The **InstanceInactiveTerminationReconciler** adds some new parameters compared 
 * **NotificationInterval**: Time interval between two email notifications.
 * **StatusCheckRequestTimeout**: The maximum timeout for a request.
 
-### Watch and Predicates
+##### Watch and Predicates for the reconciler
 The **InstanceInactiveTerminationReconciler** is set to watch and react to events related to the following resources:
-* **Instances**: if an `Instance` has been stopped and the user restart is, the reconciler on that `Instance` must be triggered again to restart the monitoring process. There is a predicate filter (**instanceTriggered**) to let the reconciler reschedule the `Instance`.
+* **Instances**: if an Instance has been stopped and the user restart is, the reconciler on that Instance must be triggered again to restart the monitoring process. There is a predicate filter (**instanceTriggered**) to let the reconciler reschedule the Instance.
 * **Templates**: if the `inactivityTimeout` is set or modified in a template, the associated instances must be reconciled to recalculate the remaining time of the associated instances.
-* **Namespaces**: if a `Namespace` is set to be monitored (add `InstanceInactivityIgnoreNamespace` label), all the `Instance` of that `Namespace` must be reconciled to evaluate the remaining time of the instance. There is a predicate filter (called **inactivityIgnoreNamespace**) to let the reconciler reschedule the `Instance` if a new `Namespace` has to be checked.
+* **Namespaces**: if a `Namespace` is set to be monitored (add `InstanceInactivityIgnoreNamespace` label), all the Instance of that `Namespace` must be reconciled to evaluate the remaining time of the instance. There is a predicate filter (called **inactivityIgnoreNamespace**) to let the reconciler reschedule the Instance if a new `Namespace` has to be checked.
 
 
-### Labels and Annotations
+##### Labels and Annotations
 
 * **InstanceInactivityIgnoreNamespace**: label added to the `Namespace` to ignore the inactivity termination for the Instances in that `Namespace`. 
 * **AlertAnnotationNum**: annotaion to check the number of email notifications already sent to the `Tenant`.
 * **LastNotificationTimestampAnnotation**: annotation to check the timestamp of the last email notification sent to the `Tenant`.
-* **LastRunningAnnotation**: previous value of the **Running** field of the `Instance`. It is used to check whether the `Instances` have been restarted after being paused.
+* **LastRunningAnnotation**: previous value of the **Running** field of the Instance. It is used to check whether the `Instances` have been restarted after being paused.
 * **CustomNumberOfAlertsAnnotation**: override the default `InstanceMaxNumberOfAlerts` in the **InstanceInactiveTerminationReconciler** for a specific template.
-* **LastRunningAnnotation**:  previous value of the `Running` field of the `Instance`. It is used to check wheather a persistent `Instance` was stopped and now has been started again.
-
----
-
-## Instance Termination Controller
-
-This controller focuses on instance termination in **exam scenarios**.
-- It verifies if the instance’s public endpoint is still responding (via an HTTP check).
-- If the endpoint is unreachable, the controller initiates the termination process for the instance.
-
----
-
-## Instance Submission Controller
-
-This controller automates **exam submission** workflows.
-- It creates a ZIP archive of the instance’s persistent volume (VM disk).
-- The archive is uploaded to a configured submission endpoint.
-
-Used during exams to collect student submissions in a reproducible and traceable manner.
-
----
-## Instance Expiration Controller
-
-This controller is a replacement for the old `delete-stale-instance` python script. It verifies whether the instance has exceeded its maximum lifespan, as defined by the `DeleteAfter` field in the associated `Template` resource. If exceeded, the instance and its related resources are deleted.
-- **Field used**: `Template.spec.DeleteAfter`
-- **Action**: Immediate deletion of the instance and related resources if expired.
+* **LastRunningAnnotation**:  previous value of the `Running` field of the Instance. It is used to check wheather a persistent Instance was stopped and now has been started again.
 
 
-### Detailed Behavior
-1. The controller starts and the instances are retrieved. For each `Instance`, the related `Template` resource is retrieved.
-    * In the `Template` resource there is the field `DeleteAfter` which defines the maximum lifespan of an `Instance` resource.
-    * This value has a default `never` value, which means that the Instance does not have to be terminated.
-    * It is possible to set a timeInterval which match the following regex `^(never|[0-9]+[mhd])$`
-2. From the `DeleteAfter` value, the remaining lifespan of the `Instance` is evaluated.
-3. When this time expires, an email is sent to the owner (tenant) of the `Instance` to inform that the `Instance` will be deleted.
-4. After a predefined interval, the `Instance` is actually deleted.
-5. Another email is sent to the `Tenant` to inform that the `Instance` reached the maximum lifespan time and has been deleted.
 
-### Parameters for the reconciler
+#### Instance Termination Controller
+
+This controller specifically focuses on instance termination in **exam scenarios**. It first verifies whether the instance’s public endpoint is still responding by performing an HTTP check. If the endpoint is found to be unreachable, the controller proceeds to initiate the termination process for that instance.
+
+
+#### Instance Submission Controller
+
+This controller automates **exam submission** workflows by creating a ZIP archive of the instance’s persistent volume, which contains the VM disk. Once the archive is created, it is uploaded to a configured submission endpoint. This process is used during exams to collect student submissions in a reproducible and traceable way, ensuring consistency and accountability.
+
+
+#### Instance Expiration Controller
+
+This controller is a replacement for the old `delete-stale-instance` python script. It verifies whether the instance has exceeded its maximum lifespan, as defined by the **DeleteAfter** field in the associated **Template** resource. If exceeded, the instance and its related resources are deleted.
+
+
+##### Detailed Behavior
+When the controller starts, it retrieves all the **Instances** and, for each one, it fetches the related **Template** resource. Inside this Template, there is a field called `DeleteAfter` which specifies the maximum lifespan of that Instance. By default, this value is set to never, meaning the Instance is not scheduled for termination. However, it can be configured with a time interval representing durations in minutes, hours, or days.
+
+Using the `DeleteAfter` value, the controller calculates the remaining lifespan of the Instance. Once this lifespan expires, the controller sends an email notification to the Instance owner (tenant) informing them that their Instance will be deleted. After a predefined extra waiting period, the controller proceeds to delete the Instance. Finally, it sends a second email to the tenant confirming that the Instance has reached its maximum lifespan and has been deleted.
+
+##### Parameters for the reconciler
 The **InstanceExpirationReconciler** adds some paramters to the controller:
 * **StatusCheckRequestTimeout**: The maximum timeout for a request.
 * **EnableExpirationNotifications**: Boolean flag to enable the email notifications.
 * **MailClient**: mail client configuration
 * **NotificationInterval**: It represent how long before the instance is deleted the notification email should be sent to the user.
 
-### Watch and Predicates
+##### Watch and Predicates for the reconciler
 The **InstanceExpirationReconciler** is set to watch and react to events related to the following resources:
-* **Instances**: if an `Instance` has been stopped and the user restart is, the reconciler on that `Instance` must be triggered again to restart the monitoring process. There is a predicate filter (**instanceTriggered**) to let the reconciler reschedule the `Instance`.
-* **Templates**: if the `deleteAfter` value is set or modified in a template, the associated instances must be reconciled to recalculate the remaining time of the associated instances. There is a predicate filter (**deleteAfterChanged**) to let the reconciler reschedule the `Instance` to update the new remaining time.
----
+* **Instances**: if an Instance has been stopped and the user restart is, the reconciler on that Instance must be triggered again to restart the monitoring process. There is a predicate filter (**instanceTriggered**) to let the reconciler reschedule the Instance.
+* **Templates**: if the `deleteAfter` value is set or modified in a template, the associated instances must be reconciled to recalculate the remaining time of the associated instances. There is a predicate filter (**deleteAfterChanged**) to let the reconciler reschedule the Instance to update the new remaining time.
 
-## Crownlabs Email Notifications
+
+#### Crownlabs Email Notifications
 TO DO
 
 
----
-## CRDs Changes
+
+#### CRDs Changes
 
 ### `Template` CRD
 - A new field `InactivityTimeout` is added:
@@ -144,4 +116,3 @@ TO DO
     - Defines the maximum duration after which an instance has to be deleted.
     - **Default**: `never`
 
----
