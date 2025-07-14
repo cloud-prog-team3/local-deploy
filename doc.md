@@ -37,19 +37,6 @@ After this check, the **LastActivityAnnotation** is updated with the most recent
 After the maximum time of notifications, the Instance is stopped.
 
 
-##### Parameters for the reconciler
-The **InstanceInactiveTerminationReconciler** adds some new parameters compared to the other controllers:
-* **InstanceMaxNumberOfAlerts**: the maximum number of notification that Crownlabs can send before stopping/deleting the Instance. It can be overrided by the `AlertAnnotationNum` annotation that can be in the Template resource.
-* **EnableInactivityNotifications**: flag to enable/disable the email notifications.
-* **MailClient**: struct containing all the mail configuration.
-* **PrometheusURL**: URL of the Prometheus service which is used to scrape metrics about the Instance activity
-* **PrometheusNginxAvailability**: Prometheus Query to understand if Nginx Metrics are available in Prometheus
-* **PrometheusBastionSSHAvailability**: Prometheus Query to understand if SSH (custom metric) Metrics are available in Prometheus
-* **PrometheusNginxData**: Prometheus Query to retrieve metrics about the last (frontend) access to a specific instance.
-* **PrometheusBastionSSHData**: Prometheus Query to retrieve metrics about the last (SSH) access to a specific instance.
-* **NotificationInterval**: Time interval between two email notifications.
-* **StatusCheckRequestTimeout**: The maximum timeout for a request.
-
 ##### Watch and Predicates for the reconciler
 The **InstanceInactiveTerminationReconciler** is set to watch and react to events related to the following resources:
 * **Instances**: if an Instance has been stopped and the user restart is, the reconciler on that Instance must be triggered again to restart the monitoring process. There is a predicate filter (**instanceTriggered**) to let the reconciler reschedule the Instance.
@@ -58,7 +45,6 @@ The **InstanceInactiveTerminationReconciler** is set to watch and react to event
 
 
 ##### Labels and Annotations
-
 * **InstanceInactivityIgnoreNamespace**: label added to the `Namespace` to ignore the inactivity termination for the Instances in that `Namespace`. 
 * **AlertAnnotationNum**: annotaion to check the number of email notifications already sent to the `Tenant`.
 * **LastNotificationTimestampAnnotation**: annotation to check the timestamp of the last email notification sent to the `Tenant`.
@@ -69,17 +55,14 @@ The **InstanceInactiveTerminationReconciler** is set to watch and react to event
 
 
 #### Instance Termination Controller
-
 This controller specifically focuses on instance termination in **exam scenarios**. It first verifies whether the instance’s public endpoint is still responding by performing an HTTP check. If the endpoint is found to be unreachable, the controller proceeds to initiate the termination process for that instance.
 
 
 #### Instance Submission Controller
-
 This controller automates **exam submission** workflows by creating a ZIP archive of the instance’s persistent volume, which contains the VM disk. Once the archive is created, it is uploaded to a configured submission endpoint. This process is used during exams to collect student submissions in a reproducible and traceable way, ensuring consistency and accountability.
 
 
 #### Instance Expiration Controller
-
 This controller is a replacement for the old `delete-stale-instance` python script. It verifies whether the instance has exceeded its maximum lifespan, as defined by the **DeleteAfter** field in the associated **Template** resource. If exceeded, the instance and its related resources are deleted.
 
 
@@ -88,13 +71,6 @@ When the controller starts, it retrieves all the **Instances** and, for each one
 
 Using the `DeleteAfter` value, the controller calculates the remaining lifespan of the Instance. Once this lifespan expires, the controller sends an email notification to the Instance owner (tenant) informing them that their Instance will be deleted. After a predefined extra waiting period, the controller proceeds to delete the Instance. Finally, it sends a second email to the tenant confirming that the Instance has reached its maximum lifespan and has been deleted.
 
-##### Parameters for the reconciler
-The **InstanceExpirationReconciler** adds some paramters to the controller:
-* **StatusCheckRequestTimeout**: The maximum timeout for a request.
-* **EnableExpirationNotifications**: Boolean flag to enable the email notifications.
-* **MailClient**: mail client configuration
-* **NotificationInterval**: It represent how long before the instance is deleted the notification email should be sent to the user.
-
 ##### Watch and Predicates for the reconciler
 The **InstanceExpirationReconciler** is set to watch and react to events related to the following resources:
 * **Instances**: if an Instance has been stopped and the user restart is, the reconciler on that Instance must be triggered again to restart the monitoring process. There is a predicate filter (**instanceTriggered**) to let the reconciler reschedule the Instance.
@@ -102,17 +78,37 @@ The **InstanceExpirationReconciler** is set to watch and react to events related
 
 
 #### Crownlabs Email Notifications
-TO DO
+Crownlabs includes a mail notification system that allows operators to send emails when specific events are triggered.
 
+The system is template-based: email templates are organized in the samples/email directory and categorized by operator (e.g., instance-automation, tenant-operator, etc.). A template defines the following components:
 
+* Subject of the email
+* Recipient of the message
+* Body of the email, which can be written in plain text or HTML format for richer content
 
-#### CRDs Changes
+In addition to the individual templates, header and footer sections have been designed and are stored in `samples/email/defaults`. These provide general Crownlabs branding and are reused across all messages to maintain consistency.
 
-### `Template` CRD
-- A new field `InactivityTimeout` is added:
-    - Defines the duration after which an instance is considered inactive.
-    - **Default**: `never`
-- A new field `DeleteAfter` is added:
-    - Defines the maximum duration after which an instance has to be deleted.
-    - **Default**: `never`
+The logic for email generation and delivery is implemented in the `pkg/utils/mail/` package, which contains helper functions for:
+* Loading templates and defaults
+* Populating them with data
+* Assembling the final email
+* Sending it to the specified recipient
 
+##### Email Functions
+- **SetConfigMapData**: Sets the ConfigMap data used to load email templates and configuration.
+
+- **NewMailClientFromConfigMap**: Creates a new `Client` instance by reading SMTP configuration from the ConfigMap. It expects a YAML file named `smtp-config.yaml` to be present in the ConfigMap.
+
+- **getPlaceholderMap**: Internal utility that converts a `Placeholders` struct into a map of placeholder names and values. It uses struct tags to determine placeholder keys.
+
+- **replacePlaceholders**: Replaces all placeholder variables (e.g., `{tenantName}`) in the email content with their actual values.
+
+- **SendCrownLabsMail**: Sends an email using the provided content template and placeholder values. It loads the base template and optional headers/footers, substitutes placeholders, and sends the email.
+
+- **readTemplateFile**: Reads a template file from the ConfigMap.
+
+- **processEmailContentTemplate**: Parses the email content template (in YAML format), replaces all placeholders, and returns a map of email fields (e.g., subject, body).
+
+- **prepareFinalEmail**: Merges header/footer templates with the email content and base email template. It Substitutes placeholders to generate the final formatted email.
+
+- **sendEmail**: Sends the fully formatted email to the specified recipient using the configured SMTP client.
